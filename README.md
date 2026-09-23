@@ -4,7 +4,7 @@ Take-home assignment for **Columbia Software Solutions (CSS)**.
 
 A reservation system for a marine research waterfront. Vessels and events (a community sail day, a donor reception) reserve a berth for a range of days, and the app does the two checks the dock coordinator used to do by eye: is the berth already taken on any of those days, and does the vessel actually fit.
 
-**Live:** https://berth-scheduler-sigma.vercel.app. Anyone can browse; making changes needs the dispatcher passcode.
+**Live:** https://berth-scheduler-sigma.vercel.app. Anyone can browse; making changes needs an account, which an admin invites you to.
 
 ## What it does
 
@@ -53,11 +53,11 @@ Vercel functions have no persistent disk, so a SQLite file there would be lost. 
    ```
 2. Import the GitHub repo in Vercel and add these environment variables (Production), then deploy. The tables are created on first request.
    - `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` from step 1
-   - `DISPATCHER_PASSCODE`: 12 to 200 characters
-   - `SESSION_SECRET`: at least 32 random characters, e.g. `openssl rand -hex 32`
-   - `APP_ORIGIN`: the exact production URL, e.g. `https://berth-scheduler.vercel.app` (no trailing slash)
-3. Open `/api/health` on the deployment. It should report `"storage": "remote"`. The nav should show "Dispatcher sign in"; if it says "View only", one of the sign-in variables is missing.
-4. Sign in and load the 2018 sample from the Import page.
+   - `APP_ORIGIN`: the exact production URL Vercel assigns, e.g. `https://berth-scheduler-sigma.vercel.app` (no trailing slash)
+   - `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_TOKEN`: for creating the first admin, once. Make the token with `openssl rand -hex 32`.
+3. Open `/api/health` on the deployment. It should report `"storage": "remote"`. The nav should show "Sign in"; if it says "View only", `APP_ORIGIN` is missing or wrong.
+4. Open `/setup`, enter the setup token and that email, and choose your name and password. That creates the first admin and closes setup for good. Then remove `BOOTSTRAP_TOKEN` and `BOOTSTRAP_ADMIN_EMAIL` from Vercel.
+5. Invite dispatchers from the People page, and load the 2018 sample from the Import page.
 
 `vercel.json` runs the server functions in Tokyo (`hnd1`), next to the Turso database's region. A save makes several round trips inside one write transaction, so the functions should sit in the same region as the database; if you create the database somewhere else, change the region to match.
 
@@ -65,8 +65,8 @@ Preview deployments have their own URLs, so writes there are refused unless that
 
 Two scripts check a deployment:
 
-- `node scripts/check-deployment.mjs https://<app>` sends anonymous requests only: storage is hosted, visitors are read-only, every write is refused without a session, and the security headers are set.
-- `BERTH_PASSCODE=... node scripts/verify-live.mjs https://<app> run` signs in and uses disposable data (named "ZZ Verify…", dated 2099) to race 10 identical bookings and two conflicting edits, where exactly one may win each time. Redeploy, then run it with `persisted` to check the data survived, then `cleanup` to delete it.
+- `node scripts/check-deployment.mjs https://<app>` sends anonymous requests only: storage is hosted, visitors are read-only, every write and every people-management route is refused without a session, and the security headers are set.
+- `BERTH_EMAIL=... BERTH_PASSWORD=... node scripts/verify-live.mjs https://<app> run` signs in with a dispatcher account and uses disposable data (named "ZZ Verify…", dated 2099) to race 10 identical bookings and two conflicting edits, where exactly one may win each time. Redeploy, then run it with `persisted` to check the data survived, then `cleanup` to delete it.
 
 ## Design decisions
 
@@ -121,30 +121,42 @@ All endpoints take and return JSON. Errors come back as `{ "errors": [...] }`, p
 | `GET/POST /api/vessels`, `GET/PATCH/DELETE /api/vessels/:id` | Manage vessels |
 | `GET/POST /api/notes`, `DELETE /api/notes/:id` | Day notes |
 | `GET /api/summary`, `GET /api/health` | Counts and years with data; database reachability and storage type |
+| `GET/POST/DELETE /api/session` | Who is signed in; sign in with `{ email, password }`; sign out |
+| `GET/POST /api/setup` | Whether first-admin setup is open; create the first admin with the operator's token (once) |
+| `GET/POST /api/invites`, `DELETE /api/invites/:id` | Admins: pending links; create an invitation or reset link; cancel one |
+| `POST /api/invites/inspect`, `POST /api/invites/accept` | Who a link is for; use it to set a password and sign in |
+| `GET /api/users`, `PATCH /api/users/:id` | Admins: everyone with an account; change a role, revoke or restore access |
 
-## Sign-in and security
+## Accounts and security
 
-**Anyone can view** the schedule, reservations, issues and berth availability. **Only the dispatcher can change anything**: bookings, confirming dates, overrides, berths, vessels, notes and imports (including the import preview). The server enforces this on every write, not just the UI. Sign-in only decides *who* may write; the double-booking check still runs inside the save transaction, so two signed-in dispatchers saving at once are still protected.
+**Anyone can view** the schedule, reservations, issues and berth availability. **Changing anything needs an account.** There are two roles: a **dispatcher** can change bookings, confirm dates, override conflicts, and edit berths, vessels, notes and imports (including the import preview). An **admin** can do all of that and also manage people. The server enforces this on every write, not just the UI. Accounts only decide *who* may write; the double-booking check still runs inside the save transaction, so two people saving at once are still protected.
 
-How it works:
+**Getting people in:**
 
-- One shared dispatcher passcode, set as a server environment variable. Signing in creates a random session token. The browser keeps it in an `HttpOnly`, `SameSite=Strict` cookie (`Secure` and `__Host-` prefixed in production), and the database stores only its SHA-256 hash with a 12-hour expiry. Signing out deletes the session on the server, so a copied cookie stops working. Changing the passcode or `SESSION_SECRET` signs everyone out.
-- Every write, sign-in and sign-out must come from the configured site origin (`APP_ORIGIN`, https in production), so other sites can't submit forms on a dispatcher's behalf.
-- Passcodes are compared in constant time. Wrong guesses are counted in the database, shared by every server instance: after 10 in 15 minutes, sign-in pauses until that window ends. It is one counter for everyone, so someone who keeps guessing can keep the dispatcher locked out while they do. That is the honest trade-off of a shared account without trusted client IPs.
-- It fails closed: if the passcode, secret or origin is missing or weak in production, all writes and sign-in are refused (503). `DEV_OPEN_WRITES=1` skips sign-in only when running `next dev`.
-- A test finds every data-changing handler under `src/app/api` by importing the route modules, and checks each one refuses a visitor without a session (401), a request from another origin (403), and a server without configuration (503).
+- **The first admin** is created at `/setup` with a token only the server operator knows (`BOOTSTRAP_TOKEN`) and exactly the configured email (`BOOTSTRAP_ADMIN_EMAIL`). Setup closes for good once used: a permanent marker in the database, not a count of admins. The first visitor to the site never becomes an admin.
+- **Everyone else is invited** from the People page. An admin enters an email and role and gets a link to pass on (no email is sent). The link works once, expires in 72 hours, and is stored only as a hash. Its token sits after the `#`, so browsers never send it to the server as part of a URL.
+- **Forgotten passwords:** an admin creates a reset link the same way. A reset changes only the password: it never changes a role or re-enables a revoked account, and it signs the person out everywhere else.
+- **Revoking access** signs the person out at once and cancels their pending links. So does a role change, so an old link can't undo it.
+- **There is always an admin.** The last active admin can't be demoted or revoked. To hand over: invite the new admin, then change your own role. Two admins demoting each other at the same moment can't both succeed, because the check and the change share one transaction, which also re-checks that the acting admin is still an admin.
+
+**Under the hood:**
+
+- Passwords are hashed with scrypt (N=2^17, r=8, p=1, the OWASP recommendation), outside any database lock. Sign-in checks a dummy hash when the email doesn't exist, so response times don't reveal which accounts exist.
+- Sessions are random tokens in an `HttpOnly`, `SameSite=Strict` cookie (`Secure` and `__Host-` prefixed in production). The database stores only a SHA-256 hash, with a 12-hour expiry. Every request re-reads the account, so revoking or demoting someone takes effect immediately, and signing out deletes the session on the server (a copied cookie stops working).
+- Wrong guesses are limited in the database, shared by every server instance: 5 per account and 100 overall per 15 minutes for sign-in, and 10 for setup. Each attempt reserves its slot before the password is checked, so parallel guesses can't slip past. Someone who keeps guessing at one account can keep that account paused while they do; per-client limits need a trusted client IP.
+- Every change, sign-in, sign-out, setup and link use must come from `APP_ORIGIN` (https in production), so other sites can't submit forms on someone's behalf.
+- It fails closed: without a valid `APP_ORIGIN` in production, every change and sign-in is refused (503). `DEV_OPEN_WRITES=1` skips sign-in only when running `next dev`. The old `DISPATCHER_PASSCODE` and `SESSION_SECRET` are ignored, and the passcode-era session tables are dropped on upgrade, so no passcode session survives. Bookings, berths, vessels and notes are untouched.
+- A test finds every data-changing handler under `src/app/api` by importing the route modules, and checks each one refuses a visitor without a session (401), a request from another origin (403), and a server without configuration (503). People-management routes are also checked to refuse dispatchers (403).
 - In production, unexpected errors return a generic message; the details go to the server log. Security headers forbid framing, set `nosniff` and a strict referrer policy, and drop `X-Powered-By`. Queries are parameterised, and imports are capped at 5 MB and parsed as text.
-
-A shared passcode says "a dispatcher did this", not which one. For real use I'd add personal accounts with roles (viewer, coordinator, admin), an audit log of who changed what, and per-user rate limits.
 
 ## Not handled yet
 
-- Personal accounts and roles. Editing uses one shared dispatcher passcode.
-- A history of who changed what.
+- A history of who changed what. Accounts make it possible; bookings don't record their author yet.
+- Email delivery for invitations. Admins pass links on themselves.
 - Arrival and departure times, which would allow same-day turnovers without an override.
 - Beam, draft and depth checks, rafting two small boats on one berth, and capacity for grouped berths like the small craft slips.
 - Recurring events.
-- A migration tool. The schema is created on first use, with one small built-in upgrade step (adding `known_dates`). A real migration tool should replace that before the schema changes again.
+- A migration tool. The schema is created on first use, with small built-in upgrade steps (adding `known_dates`, dropping the passcode-era session tables). A real migration tool should replace that before the schema changes again.
 
 ## License
 

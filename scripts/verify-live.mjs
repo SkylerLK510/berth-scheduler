@@ -1,17 +1,18 @@
 // Signed-in checks against a running deployment, using disposable test data.
 // Everything it creates is named "ZZ Verify <run id>", dated in 2099, and deleted by `cleanup`.
 //
-//   BERTH_PASSCODE=... node scripts/verify-live.mjs https://your-app.vercel.app run
+//   BERTH_EMAIL=... BERTH_PASSWORD=... node scripts/verify-live.mjs https://your-app.vercel.app run
 //     signs in, races 10 identical bookings (exactly one may win), races two edits onto the
 //     same days (exactly one may win), leaves one marker booking, signs out, and checks the
 //     old cookie is dead. Saves the run's ids to .verify-live.json (git-ignored).
 //   node scripts/verify-live.mjs https://your-app.vercel.app persisted
 //     after a redeploy: checks the marker booking is still there (no sign-in needed).
-//   BERTH_PASSCODE=... node scripts/verify-live.mjs https://your-app.vercel.app cleanup
+//   BERTH_EMAIL=... BERTH_PASSWORD=... node scripts/verify-live.mjs https://your-app.vercel.app cleanup
 //     deletes everything the run created.
 //
-// The passcode is read from the environment only, never from arguments, and never printed.
-// Redirects are never followed, so the passcode and cookie can't be forwarded elsewhere.
+// Use a dispatcher or admin account. The password is read from the environment only, never
+// from arguments, and never printed. Redirects are never followed, so the password and
+// cookie can't be forwarded elsewhere.
 // Add --local to allow http://localhost. About 30 requests per run.
 //
 // Every record it creates carries the run id: the berth and vessels are named
@@ -54,16 +55,17 @@ async function call(path, method = "GET", body) {
 }
 
 async function signIn() {
-  const passcode = process.env.BERTH_PASSCODE;
-  if (!passcode) throw new Error("Set BERTH_PASSCODE in the environment (it is never printed).");
+  const email = process.env.BERTH_EMAIL;
+  const password = process.env.BERTH_PASSWORD;
+  if (!email || !password) throw new Error("Set BERTH_EMAIL and BERTH_PASSWORD in the environment (the password is never printed).");
   const response = await fetch(new URL("/api/session", target), {
     method: "POST",
     redirect: "manual",
     signal: AbortSignal.timeout(20000),
     headers: { Origin: target.origin, "Content-Type": "application/json" },
-    body: JSON.stringify({ passcode }),
+    body: JSON.stringify({ email, password }),
   });
-  const setCookie = response.headers.getSetCookie().find((c) => c.includes("berth_dispatcher="));
+  const setCookie = response.headers.getSetCookie().find((c) => c.includes("berth_session="));
   if (response.status !== 200 || !setCookie) throw new Error(`Sign-in failed with status ${response.status}. Stopping so wrong guesses don't count toward the lockout.`);
   cookie = setCookie.split(";")[0];
   check("signed in", true);

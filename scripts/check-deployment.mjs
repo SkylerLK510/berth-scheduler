@@ -36,6 +36,7 @@ for (const [path, methods] of [
   ["/api/vessels", ["POST"]], ["/api/vessels/0", ["PATCH", "DELETE"]],
   ["/api/reservations", ["POST"]], ["/api/reservations/0", ["PATCH", "DELETE"]],
   ["/api/notes", ["POST"]], ["/api/notes/0", ["DELETE"]], ["/api/import", ["POST"]],
+  ["/api/users", ["GET"]], ["/api/users/0", ["PATCH"]], ["/api/invites", ["GET", "POST"]], ["/api/invites/0", ["DELETE"]],
 ]) {
   for (const method of methods) {
     const response = await call(path, method);
@@ -44,5 +45,9 @@ for (const [path, methods] of [
 }
 const forged = await call("/api/session", "POST", "https://untrusted.example");
 check("cross-origin sign-in refused", forged.status === 403);
+const forgedSetup = await call("/api/setup", "POST", "https://untrusted.example");
+check("cross-origin setup refused", forgedSetup.status === 403);
+const setup = await call("/api/setup");
+check("setup status readable and private", setup.status === 200 && (setup.headers.get("cache-control") ?? "").includes("no-store"));
 console.log(`${failures} failed checks. This smoke check does not certify security or test concurrent saves.`);
 process.exitCode = failures ? 1 : 0;
