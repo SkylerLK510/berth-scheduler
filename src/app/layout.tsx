@@ -17,7 +17,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <Nav />
           <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">{children}</main>
           <footer className="px-4 py-4 text-center text-xs text-slate-400">
-            Berth Scheduler · dates are inclusive whole days · anyone can view; changes need the dispatcher passcode
+            Berth Scheduler · dates are inclusive whole days · anyone can view; changes need an account
           </footer>
         </DispatcherProvider>
       </body>

@@ -19,7 +19,7 @@ const links = [
 /** Who is looking: signed-in dispatcher (with sign out), or a sign-in link. */
 function SessionStatus() {
   const router = useRouter();
-  const { editing, refresh } = useDispatcher();
+  const { editing, user, refresh } = useDispatcher();
   const [signOutError, setSignOutError] = useState<string | null>(null);
 
   async function signOut() {
@@ -38,10 +38,11 @@ function SessionStatus() {
   if (editing === "loading") return null;
   if (editing === "open") return <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">Local dev: editing open</span>;
   if (editing === "off") return <span className="text-xs text-slate-400">View only</span>;
-  if (editing === "viewer") return <SignInLink className="btn">Dispatcher sign in</SignInLink>;
+  if (editing === "viewer") return <SignInLink className="btn">Sign in</SignInLink>;
   return (
     <span className="flex items-center gap-2 text-sm text-slate-600">
-      <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">Dispatcher</span>
+      <span title={user?.email}>{user?.name}</span>
+      <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">{user?.role === "admin" ? "Admin" : "Dispatcher"}</span>
       <button className="text-sky-700 underline" onClick={signOut}>
         Sign out
       </button>
@@ -56,6 +57,8 @@ function SessionStatus() {
 
 export default function Nav() {
   const pathname = usePathname();
+  const { isAdmin } = useDispatcher();
+  const shown = isAdmin ? [...links, { href: "/people", label: "People" }] : links;
   return (
     <header className="border-b border-slate-200 bg-white">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
@@ -64,7 +67,7 @@ export default function Nav() {
           Berth Scheduler
         </Link>
         <nav className="flex flex-wrap gap-1 text-sm">
-          {links.map((l) => {
+          {shown.map((l) => {
             const active = l.href === "/" ? pathname === "/" : pathname.startsWith(l.href);
             return (
               <Link

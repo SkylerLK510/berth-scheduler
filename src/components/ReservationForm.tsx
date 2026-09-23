@@ -218,7 +218,7 @@ export default function ReservationForm({ initial, reservationId, overrideReason
     <form onSubmit={submit} className="card max-w-2xl space-y-5 p-5">
       {!canEdit && (
         <p className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">
-          View only. <SignInLink>Sign in as the dispatcher</SignInLink> to change this reservation.
+          View only. <SignInLink>Sign in</SignInLink> to change this reservation.
         </p>
       )}
       {/* Disabled for viewers: the server refuses their changes anyway, this just doesn't offer them. */}

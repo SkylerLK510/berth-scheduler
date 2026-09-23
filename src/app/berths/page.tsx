@@ -91,7 +91,7 @@ export default function BerthsPage() {
       </form>
       ) : (
         <p className="text-sm text-slate-600">
-          <SignInLink>Sign in as the dispatcher</SignInLink> to add or change berths.
+          <SignInLink>Sign in</SignInLink> to add or change berths.
         </p>
       )}
 

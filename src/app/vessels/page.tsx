@@ -88,7 +88,7 @@ export default function VesselsPage() {
       </form>
       ) : (
         <p className="text-sm text-slate-600">
-          <SignInLink>Sign in as the dispatcher</SignInLink> to add or change vessels.
+          <SignInLink>Sign in</SignInLink> to add or change vessels.
         </p>
       )}
 
