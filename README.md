@@ -4,7 +4,7 @@ Take-home assignment for **Columbia Software Solutions (CSS)**.
 
 A reservation system for a marine research waterfront. Vessels and events (a community sail day, a donor reception) reserve a berth for a range of days, and the app does the two checks the dock coordinator used to do by eye: is the berth already taken on any of those days, and does the vessel actually fit.
 
-**Live:** _add the Vercel URL here_
+**Live:** https://berth-scheduler-sigma.vercel.app. Anyone can browse; making changes needs the dispatcher passcode.
 
 ## What it does
 
