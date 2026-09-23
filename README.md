@@ -39,7 +39,7 @@ npx tsc --noEmit
 npm run build
 ```
 
-The database tests cover the parts that are easy to get wrong: two saves racing for the same berth (only one wins), two edits moving different stays onto the same days, confirming an imported stay, re-importing the same sheet, stays that cross into the next year's sheet, and an import that fails halfway (nothing is kept). These concurrency tests run against local SQLite files. The same transaction runs over HTTP on hosted Turso, but that hasn't been exercised against a live Turso database yet; the first check after deploying is two browser tabs saving overlapping bookings at the same moment.
+The database tests cover the parts that are easy to get wrong: two saves racing for the same berth (only one wins), two edits moving different stays onto the same days, confirming an imported stay, re-importing the same sheet, stays that cross into the next year's sheet, and an import that fails halfway (nothing is kept). These concurrency tests run against local SQLite files. The same checks were also run against the live deployment and its hosted Turso database: 10 bookings for the same berth and days sent at once saved exactly one and refused the other nine as conflicts, two stays moved onto the same days at once saved exactly one move, and the test data survived a redeploy.
 
 ## Deploying (Vercel + Turso)
 
