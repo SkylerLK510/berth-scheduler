@@ -10,6 +10,13 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+/** Longest text accepted per field, so no one can bloat the database or break the layout. */
+export const MAX_LENGTH = { name: 200, notes: 2000, noteText: 500 } as const;
+
+function capLength(value: string, max: number, label: string, errors: string[]): void {
+  if (value.length > max) errors.push(`${label} can be at most ${max} characters.`);
+}
+
 function optionalLength(v: unknown, label: string, errors: string[]): number | null {
   if (v === null || v === undefined || v === "") return null;
   const n = typeof v === "string" ? Number(v) : v;
@@ -31,8 +38,10 @@ export function parseBerthInput(body: unknown): Validated<{ name: string; length
   const errors: string[] = [];
   const name = typeof body.name === "string" ? body.name.trim() : "";
   if (!name) errors.push("Name is required.");
+  capLength(name, MAX_LENGTH.name, "Name", errors);
   const lengthFt = optionalLength(body.lengthFt, "Length", errors);
   const notes = typeof body.notes === "string" ? body.notes.trim() : "";
+  capLength(notes, MAX_LENGTH.notes, "Notes", errors);
   const sortOrder = typeof body.sortOrder === "number" && Number.isInteger(body.sortOrder) ? body.sortOrder : undefined;
   return errors.length ? { ok: false, errors } : { ok: true, value: { name, lengthFt, notes, sortOrder } };
 }
@@ -42,8 +51,10 @@ export function parseVesselInput(body: unknown): Validated<{ name: string; lengt
   const errors: string[] = [];
   const name = typeof body.name === "string" ? body.name.trim() : "";
   if (!name) errors.push("Name is required.");
+  capLength(name, MAX_LENGTH.name, "Name", errors);
   const lengthFt = optionalLength(body.lengthFt, "Length", errors);
   const notes = typeof body.notes === "string" ? body.notes.trim() : "";
+  capLength(notes, MAX_LENGTH.notes, "Notes", errors);
   return errors.length ? { ok: false, errors } : { ok: true, value: { name, lengthFt, notes } };
 }
 
@@ -59,6 +70,7 @@ export function parseReservationInput(body: unknown): Validated<ReservationInput
 
   const title = typeof body.title === "string" ? body.title.trim() : "";
   if (vesselId === null && !title) errors.push("Give the event a title, or pick a vessel.");
+  capLength(title, MAX_LENGTH.name, "Title", errors);
 
   const startDate = typeof body.startDate === "string" ? body.startDate : "";
   const endDate = typeof body.endDate === "string" ? body.endDate : "";
@@ -69,6 +81,8 @@ export function parseReservationInput(body: unknown): Validated<ReservationInput
   const notes = typeof body.notes === "string" ? body.notes.trim() : "";
   const override = body.override === true;
   const overrideReason = typeof body.overrideReason === "string" ? body.overrideReason.trim() : "";
+  capLength(notes, MAX_LENGTH.notes, "Notes", errors);
+  capLength(overrideReason, MAX_LENGTH.notes, "Override reason", errors);
   if (override && !overrideReason) errors.push("Give a reason when overriding a conflict.");
   const confirmDates = body.confirmDates === true;
 
@@ -88,5 +102,6 @@ export function parseNoteInput(body: unknown): Validated<{ berthId: number | nul
   if (!isIsoDate(date)) errors.push("Date must be a valid date (YYYY-MM-DD).");
   const text = typeof body.text === "string" ? body.text.trim() : "";
   if (!text) errors.push("Note text is required.");
+  capLength(text, MAX_LENGTH.noteText, "Note text", errors);
   return errors.length ? { ok: false, errors } : { ok: true, value: { berthId: berthId ?? null, date, text } };
 }
