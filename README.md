@@ -59,6 +59,8 @@ Vercel functions have no persistent disk, so a SQLite file there would be lost. 
 3. Open `/api/health` on the deployment. It should report `"storage": "remote"`. The nav should show "Dispatcher sign in"; if it says "View only", one of the sign-in variables is missing.
 4. Sign in and load the 2018 sample from the Import page.
 
+`vercel.json` runs the server functions in Tokyo (`hnd1`), next to the Turso database's region. A save makes several round trips inside one write transaction, so the functions should sit in the same region as the database; if you create the database somewhere else, change the region to match.
+
 Preview deployments have their own URLs, so writes there are refused unless that URL is added to `APP_ORIGIN` (comma-separated).
 
 Two scripts check a deployment:
