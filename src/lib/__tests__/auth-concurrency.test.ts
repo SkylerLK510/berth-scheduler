@@ -1,28 +1,34 @@
+// Parallel wrong guesses can't get past the per-account limit, because each attempt reserves
+// its slot in a write transaction before the (slow) password check runs.
+
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { attemptLogin, authMode, LOGIN_LIMIT, LOGIN_WINDOW_MS } from "../auth";
-import { db, resetDbForTests } from "../db";
+import { AccountError, bootstrapAdmin, signIn } from "../accounts";
+import { authMode, LIMITS, LOGIN_WINDOW_MS } from "../auth";
+import { resetDbForTests } from "../db";
 
-it("concurrent login failures cannot bypass the shared limit or extend its current window", async () => {
+it("concurrent wrong passwords for one account get exactly the allowed number of tries", async () => {
   const dir = mkdtempSync(join(tmpdir(), "berth-login-concurrency-"));
   try {
     resetDbForTests(`file:${join(dir, "test.db")}`);
-    const mode = authMode({
-      NODE_ENV: "production", DISPATCHER_PASSCODE: "test-only-passcode-for-concurrency",
-      SESSION_SECRET: "test-only-session-secret-for-concurrency-1234",
-      APP_ORIGIN: "https://example.test",
-    });
-    if (mode.kind !== "enforced") throw new Error("Test configuration rejected");
-    await db();
+    const token = "test-only-setup-token-0123456789abcdef";
+    const mode = authMode({ NODE_ENV: "production", APP_ORIGIN: "https://example.test", BOOTSTRAP_ADMIN_EMAIL: "admin@example.test", BOOTSTRAP_TOKEN: token });
+    await bootstrapAdmin(mode, { token, email: "admin@example.test", name: "Admin", password: "the right password" });
+
     const now = Date.now();
-    const responses = await Promise.all(Array.from({ length: LOGIN_LIMIT + 4 }, () => attemptLogin(mode, "wrong", now)));
-    expect(responses.filter((r) => !r.ok && r.status === 401)).toHaveLength(LOGIN_LIMIT);
-    expect(responses.filter((r) => !r.ok && r.status === 429)).toHaveLength(4);
-    const late = await attemptLogin(mode, "wrong", now + LOGIN_WINDOW_MS - 1000);
-    expect(late).toEqual({ ok: false, status: 429, retryAfterSeconds: 1 });
-    expect(await attemptLogin(mode, mode.passcode, now + LOGIN_WINDOW_MS)).toEqual({ ok: true });
+    const statuses = await Promise.all(
+      Array.from({ length: LIMITS.email + 4 }, (_, i) =>
+        signIn("admin@example.test", `wrong ${i}`, now).then(
+          () => 200,
+          (err) => (err instanceof AccountError ? err.status : 500),
+        ),
+      ),
+    );
+    expect(statuses.filter((s) => s === 401)).toHaveLength(LIMITS.email);
+    expect(statuses.filter((s) => s === 429)).toHaveLength(4);
+    await expect(signIn("admin@example.test", "the right password", now + LOGIN_WINDOW_MS)).resolves.toMatchObject({ role: "admin" });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -57,19 +57,50 @@ CREATE TABLE IF NOT EXISTS day_notes (
 );
 CREATE INDEX IF NOT EXISTS day_notes_date ON day_notes (date);
 
--- Dispatcher sessions (see auth.ts). Only a hash of each token is stored.
-CREATE TABLE IF NOT EXISTS sessions (
-  token_hash       TEXT    PRIMARY KEY,
-  passcode_version TEXT    NOT NULL,
-  created_at       INTEGER NOT NULL,
-  expires_at       INTEGER NOT NULL
+-- People who can make changes (see accounts.ts). Anyone can view without an account.
+CREATE TABLE IF NOT EXISTS users (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  email         TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+  name          TEXT    NOT NULL,
+  role          TEXT    NOT NULL CHECK (role IN ('admin', 'dispatcher')),
+  password_hash TEXT    NOT NULL,
+  created_at    INTEGER NOT NULL,
+  disabled_at   INTEGER
 );
 
--- Shared counter of failed sign-ins in the current window (one row).
-CREATE TABLE IF NOT EXISTS login_throttle (
-  id           INTEGER PRIMARY KEY CHECK (id = 1),
+-- Invitation and password-reset links. Only a hash of each token is stored.
+CREATE TABLE IF NOT EXISTS invites (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  token_hash TEXT    NOT NULL UNIQUE,
+  email      TEXT    NOT NULL COLLATE NOCASE,
+  role       TEXT    NOT NULL CHECK (role IN ('admin', 'dispatcher')),
+  created_by INTEGER,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used_at    INTEGER,
+  revoked_at INTEGER
+);
+
+-- Signed-in sessions. Only a hash of each token is stored.
+CREATE TABLE IF NOT EXISTS user_sessions (
+  token_hash TEXT    PRIMARY KEY,
+  user_id    INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS user_sessions_user ON user_sessions (user_id);
+
+-- Failed attempts per bucket ("email:...", "global", "setup") in the current window.
+CREATE TABLE IF NOT EXISTS login_attempts (
+  bucket       TEXT    PRIMARY KEY,
   window_start INTEGER NOT NULL,
   failures     INTEGER NOT NULL
+);
+
+-- One-off facts about the installation, e.g. when the first admin was set up.
+CREATE TABLE IF NOT EXISTS app_settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
 );
 `;
 // Note: references are checked in code (repo.ts) rather than with PRAGMA foreign_keys,
@@ -104,6 +135,10 @@ function connect(): Client {
 async function migrate(conn: Client): Promise<void> {
   const columns = (await conn.execute("PRAGMA table_info(reservations)")).rows.map((r) => String(r.name));
   if (!columns.includes("known_dates")) await conn.execute("ALTER TABLE reservations ADD COLUMN known_dates TEXT");
+  // The shared-passcode era kept its sessions and sign-in counter in these two tables.
+  // Personal accounts replace them, so drop them: every passcode session ends, and no
+  // passcode can sign anyone in again. No schedule data lives in either table.
+  await conn.executeMultiple("DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS login_throttle;");
 }
 
 /** Returns the shared client, creating the tables the first time it is used. */
