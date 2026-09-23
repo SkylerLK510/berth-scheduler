@@ -53,3 +53,6 @@ CLAUDE.md
 
 # local tool config
 .claude/
+
+# deployment check state (scripts/verify-live.mjs)
+.verify-live.json

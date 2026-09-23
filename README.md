@@ -61,6 +61,11 @@ Vercel functions have no persistent disk, so a SQLite file there would be lost. 
 
 Preview deployments have their own URLs, so writes there are refused unless that URL is added to `APP_ORIGIN` (comma-separated).
 
+Two scripts check a deployment:
+
+- `node scripts/check-deployment.mjs https://<app>` sends anonymous requests only: storage is hosted, visitors are read-only, every write is refused without a session, and the security headers are set.
+- `BERTH_PASSCODE=... node scripts/verify-live.mjs https://<app> run` signs in and uses disposable data (named "ZZ Verify…", dated 2099) to race 10 identical bookings and two conflicting edits, where exactly one may win each time. Redeploy, then run it with `persisted` to check the data survived, then `cleanup` to delete it.
+
 ## Design decisions
 
 ### Data model
